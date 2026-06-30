@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IoT Dashboard</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #666;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --font: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+  }
+
+  /* LOGIN */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 380px;
+  }
+  .login-box h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .login-box p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 2rem;
+  }
+  .field {
+    margin-bottom: 1rem;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .field input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .login-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 11px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 0.5rem;
+    transition: opacity 0.15s;
+  }
+  .login-btn:hover { opacity: 0.9; }
+  #login-error {
+    font-size: 13px;
+    color: var(--red);
+    margin-top: 12px;
+    display: none;
+    text-align: center;
+  }
+
+  /* DASHBOARD */
+  #dashboard { display: none; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .broker-badge {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-family: var(--mono);
+  }
+  .conn-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .conn-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .conn-dot.connected { background: var(--green); }
+  .conn-dot.error { background: var(--red); }
+
+  main {
+    padding: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--muted);
+  }
+  .empty-state .icon {
+    font-size: 48px;
+    margin-bottom: 1rem;
+    opacity: 0.3;
+  }
+  .empty-state p { font-size: 14px; }
+
+  .devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+
+  .device-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .device-card:hover { border-color: #3a3a3a; }
+
+  .device-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .device-name {
+    font-size: 15px;
+    font-weight: 600;
+    text-transform: capitalize;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .device-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+  .device-status {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+  .device-status.online {
+    background: rgba(34,197,94,0.1);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .device-status.offline {
+    background: rgba(239,68,68,0.1);
+    color: var(--red);
+    border: 1px solid rgba(239,68,68,0.2);
+  }
+
+  .sensors-grid {
+    padding: 1rem 1.25rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .sensor-item {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .sensor-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sensor-value {
+    font-size: 22px;
+    font-weight: 600;
+    font-family: var(--mono);
+    line-height: 1;
+  }
+  .sensor-unit {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+
+  .device-footer {
+    padding: 8px 1.25rem;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .logout-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .logout-btn:hover {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .settings-panel {
+    display: none;
+    position: fixed;
+    top: 64px;
+    right: 1.5rem;
+    z-index: 20;
+  }
+  .settings-panel.open { display: block; }
+  .settings-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    width: 280px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .settings-box h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .radio-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .radio-row:hover { background: var(--surface2); }
+  .radio-row input { margin-top: 3px; accent-color: var(--accent); }
+  .radio-title { font-size: 13px; font-weight: 500; }
+  .radio-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* LIST MODE */
+  .device-list-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+    margin-bottom: 10px;
+  }
+  .device-list-item:hover {
+    border-color: var(--accent);
+    transform: translateX(2px);
+  }
+  .device-list-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .device-list-meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .device-list-arrow {
+    color: var(--muted);
+    font-size: 16px;
+  }
+
+  .device-detail-header {
+    margin-bottom: 1rem;
+  }
+  .device-detail-header h2 {
+    font-size: 22px;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  @media (max-width: 600px) {
+    main { padding: 1rem; }
+    .devices-grid { grid-template-columns: 1fr; }
+    header { padding: 0 1rem; }
+    .broker-badge { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>IoT Dashboard</h1>
+    <p>HiveMQ kimlik bilgilerinizle giriş yapın</p>
+    <div class="field">
+      <label>Kullanıcı adı</label>
+      <input type="text" id="inp-user" placeholder="Kullanıcı adı" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Şifre</label>
+      <input type="password" id="inp-pass" placeholder="Şifre" autocomplete="off">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Bağlan</button>
+    <div id="login-error">Bağlantı başarısız. Bilgileri kontrol edin.</div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <header>
+    <div class="header-left">
+      <h1>IoT Dashboard</h1>
+      <span class="broker-badge">HiveMQ Cloud</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="conn-indicator">
+        <div class="conn-dot" id="conn-dot"></div>
+        <span id="conn-text">Bağlanıyor...</span>
+      </div>
+      <button class="icon-btn" id="back-btn" onclick="showDeviceList()" style="display:none">← Cihazlar</button>
+      <button class="icon-btn" onclick="toggleSettings()">⚙</button>
+      <button class="logout-btn" onclick="doLogout()">Çıkış</button>
+    </div>
+  </header>
+
+  <div id="settings-panel" class="settings-panel">
+    <div class="settings-box">
+      <h3>Görünüm</h3>
+      <label class="radio-row">
+        <input type="radio" name="viewmode" value="list" onchange="setViewMode('list')">
+        <div>
+          <div class="radio-title">Liste modu</div>
+          <div class="radio-desc">Önce cihazlar görünür, tıklayınca sensörler açılır</div>
+        </div>
+      </label>
+      <label class="radio-row">
+        <input type="radio" name="viewmode" value="all" onchange="setViewMode('all')">
+        <div>
+          <div class="radio-title">Tümünü göster</div>
+          <div class="radio-desc">Tüm cihaz ve sensörler aynı anda görünür</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <main>
+    <div id="empty-state" class="empty-state">
+      <div class="icon">📡</div>
+      <p>Cihaz bekleniyor...<br>ESP8266 bağlandığında otomatik görünecek.</p>
+    </div>
+    <div class="devices-grid" id="devices-grid"></div>
+  </main>
+</div>
+
+<script>
+const BROKER_HOST = 'e099b78581aa49fe9643253dc93c7f33.s1.eu.hivemq.cloud';
+const BROKER_PORT = 8884;
+const TOPIC_ROOT  = 'cihazlar/#';
+
+const SENSOR_META = {
+  sicaklik: { label: 'Sıcaklık', unit: '°C', icon: '🌡' },
+  nem:       { label: 'Nem',      unit: '%',  icon: '💧' },
+  saat:      { label: 'Saat',     unit: '',   icon: '🕐' },
+  tarih:     { label: 'Tarih',    unit: '',   icon: '📅' },
+  ldr:       { label: 'Işık',     unit: 'lx', icon: '☀️' },
+  gaz:       { label: 'Gaz',      unit: 'ppm',icon: '💨' },
+  hareket:   { label: 'Hareket',  unit: '',   icon: '👁' },
+  mesafe:    { label: 'Mesafe',   unit: 'cm', icon: '📏' },
+  basinc:    { label: 'Basınç',   unit: 'hPa',icon: '🔵' },
+};
+
+let client = null;
+let devices = {};
+let viewMode = localStorage.getItem('view_mode') || 'list';
+let activeDevice = null; // detay modunda hangi cihaz açık
+
+function toggleSettings() {
+  document.getElementById('settings-panel').classList.toggle('open');
+  document.querySelector(`input[name="viewmode"][value="${viewMode}"]`).checked = true;
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  localStorage.setItem('view_mode', mode);
+  activeDevice = null;
+  document.getElementById('settings-panel').classList.remove('open');
+  renderAll();
+}
+
+function showDeviceList() {
+  activeDevice = null;
+  renderAll();
+}
+
+function showDeviceDetail(cihaz) {
+  activeDevice = cihaz;
+  renderAll();
+}
+
+function doLogin() {
+  const user = document.getElementById('inp-user').value.trim();
+  const pass = document.getElementById('inp-pass').value;
+  if (!user || !pass) return;
+
+  document.getElementById('login-error').style.display = 'none';
+  document.querySelector('.login-btn').textContent = 'Bağlanıyor...';
+
+  const url = `wss://${BROKER_HOST}:${BROKER_PORT}/mqtt`;
+  const clientId = 'dashboard_' + Math.random().toString(16).slice(2, 8);
+
+  client = mqtt.connect(url, {
+    clientId,
+    username: user,
+    password: pass,
+    clean: true,
+    connectTimeout: 6000,
+    reconnectPeriod: 3000,
+  });
+
+  client.on('connect', () => {
+    localStorage.setItem('mqtt_user', user);
+    localStorage.setItem('mqtt_pass', pass);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    setConnStatus('connected', 'Bağlı');
+    client.subscribe(TOPIC_ROOT);
+  });
+
+  client.on('error', () => {
+    document.getElementById('login-error').style.display = 'block';
+    document.querySelector('.login-btn').textContent = 'Bağlan';
+    client.end(true);
+  });
+
+  client.on('offline', () => setConnStatus('', 'Bağlantı kesildi'));
+  client.on('reconnect', () => setConnStatus('', 'Yeniden bağlanıyor...'));
+
+  client.on('message', (topic, payload) => {
+    const parts = topic.split('/');
+    if (parts.length < 3) return;
+    const cihaz = parts[1];
+    const sensor = parts[2];
+    const deger  = payload.toString();
+    updateDevice(cihaz, sensor, deger);
+  });
+}
+
+function doLogout() {
+  if (client) client.end(true);
+  localStorage.removeItem('mqtt_user');
+  localStorage.removeItem('mqtt_pass');
+  devices = {};
+  activeDevice = null;
+  document.getElementById('devices-grid').innerHTML = '';
+  document.getElementById('empty-state').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.querySelector('.login-btn').textContent = 'Bağlan';
+  document.getElementById('inp-pass').value = '';
+}
+
+function setConnStatus(cls, text) {
+  const dot  = document.getElementById('conn-dot');
+  const span = document.getElementById('conn-text');
+  dot.className = 'conn-dot ' + cls;
+  span.textContent = text;
+}
+
+function updateDevice(cihaz, sensor, deger) {
+  const isNewDevice = !devices[cihaz];
+  if (isNewDevice) {
+    devices[cihaz] = { status: 'offline', sensors: {}, lastUpdate: null };
+  }
+
+  if (sensor === 'durum') {
+    devices[cihaz].status = deger;
+  } else {
+    devices[cihaz].sensors[sensor] = deger;
+    devices[cihaz].lastUpdate = new Date();
+  }
+
+  renderAll();
+}
+
+function renderAll() {
+  document.getElementById('back-btn').style.display =
+    (viewMode === 'list' && activeDevice) ? 'inline-block' : 'none';
+
+  const deviceNames = Object.keys(devices);
+  if (deviceNames.length === 0) {
+    document.getElementById('empty-state').style.display = 'block';
+    document.getElementById('devices-grid').innerHTML = '';
+    return;
+  }
+  document.getElementById('empty-state').style.display = 'none';
+
+  if (viewMode === 'all') {
+    renderAllMode(deviceNames);
+  } else {
+    if (activeDevice && devices[activeDevice]) {
+      renderDetailMode(activeDevice);
+    } else {
+      renderListMode(deviceNames);
+    }
+  }
+}
+
+function renderAllMode(deviceNames) {
+  const grid = document.getElementById('devices-grid');
+  grid.className = 'devices-grid';
+  grid.innerHTML = deviceNames.map(cihaz => deviceCardHTML(cihaz)).join('');
+}
+
+function renderListMode(deviceNames) {
+  const grid = document.getElementById('devices-grid');
+  grid.className = '';
+  grid.innerHTML = deviceNames.map(cihaz => {
+    const d = devices[cihaz];
+    const sensorCount = Object.keys(d.sensors).length;
+    const isOnline = d.status === 'online';
+    return `
+      <div class="device-list-item" onclick="showDeviceDetail('${cihaz}')">
+        <div class="device-list-left">
+          <div class="device-icon">📦</div>
+          <div>
+            <div class="device-name" style="text-transform:capitalize">${cihaz}</div>
+            <div class="device-list-meta">${sensorCount} sensör</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="device-status ${isOnline ? 'online' : 'offline'}">● ${isOnline ? 'Online' : 'Offline'}</span>
+          <span class="device-list-arrow">→</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDetailMode(cihaz) {
+  const grid = document.getElementById('devices-grid');
+  grid.className = '';
+  grid.innerHTML = `
+    <div class="device-detail-header">
+      <h2>${cihaz}</h2>
+    </div>
+    ${deviceCardHTML(cihaz, true)}
+  `;
+}
+
+function deviceCardHTML(cihaz, expanded) {
+  const d = devices[cihaz];
+  const isOnline = d.status === 'online';
+  const sensorEntries = Object.entries(d.sensors);
+  const lastUpdateText = d.lastUpdate
+    ? 'Son güncelleme: ' + d.lastUpdate.toLocaleTimeString('tr-TR')
+    : 'Bekleniyor...';
+
+  const sensorsHTML = sensorEntries.map(([sensor, deger]) => {
+    const meta = SENSOR_META[sensor] || { label: sensor, unit: '', icon: '📊' };
+    return `
+      <div class="sensor-item">
+        <div class="sensor-label">${meta.icon} ${meta.label}</div>
+        <div class="sensor-value">${deger}<span class="sensor-unit">${meta.unit}</span></div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="device-card">
+      ${!expanded ? `
+      <div class="device-header">
+        <div class="device-name">
+          <div class="device-icon">📦</div>
+          ${cihaz}
+        </div>
+        <span class="device-status ${isOnline ? 'online' : 'offline'}">● ${isOnline ? 'Online' : 'Offline'}</span>
+      </div>
+      ` : ''}
+      <div class="sensors-grid">${sensorsHTML || '<div style="color:var(--muted);font-size:13px;padding:8px">Henüz veri yok</div>'}</div>
+      <div class="device-footer">
+        <span>${lastUpdateText}</span>
+        <span style="font-family:var(--mono);color:var(--muted)">cihazlar/${cihaz}/#</span>
+      </div>
+    </div>
+  `;
+}
+
+// Daha önce giriş yapıldıysa otomatik bağlan
+window.addEventListener('load', () => {
+  const u = localStorage.getItem('mqtt_user');
+  const p = localStorage.getItem('mqtt_pass');
+  if (u && p) {
+    document.getElementById('inp-user').value = u;
+    document.getElementById('inp-pass').value = p;
+    doLogin();
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') {
+    doLogin();
+  }
+});
+
+document.addEventListener('click', e => {
+  const panel = document.getElementById('settings-panel');
+  if (panel.classList.contains('open') &&
+      !panel.contains(e.target) &&
+      !e.target.closest('.icon-btn')) {
+    panel.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>
