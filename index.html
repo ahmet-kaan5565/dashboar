@@ -91,6 +91,10 @@
   .chart-stat{font-size:10px;font-family:var(--mono);}
   .chart-stat span{color:var(--muted);}
 
+  .ota-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:2px 8px;font-size:10px;font-family:var(--mono);cursor:pointer;margin-left:6px;}
+  .ota-btn:hover:not(:disabled){border-color:var(--accent);color:var(--text);}
+  .ota-btn:disabled{opacity:.6;cursor:default;}
+
   /* LIST MODE */
   .device-list-item{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .15s,transform .1s;margin-bottom:10px;}
   .device-list-item:hover{border-color:var(--accent);transform:translateX(3px);}
@@ -249,6 +253,7 @@ const SENSOR_META = {
   tarih:   { label:'Tarih',    unit:'',    icon:'📅', color:'#64748b' },
 };
 const CHART_PARAMS  = ['sicaklik','nem'];
+const ONLINE_TIMEOUT_MS = 150 * 1000;   // 30sn aralık x 5: bu kadar sessizse offline say
 const ICON_OPTIONS  = ['📦','🏠','🛏️','🛋️','🍳','🚪','🌳','🏢','🧊','🔥','🐾','🚗','💡','🌡️'];
 
 // ==================== STATE ====================
@@ -299,12 +304,15 @@ function startListening() {
   const unsub = db.collection('cihazlar').onSnapshot(snap => {
     snap.forEach(doc => {
       const cihazId = doc.id;
+      const dd = doc.data() || {};
       if (!devices[cihazId]) {
-        devices[cihazId] = { sensors:{}, lastUpdate:null, seenParams:new Set(), fbHistory:{} };
+        devices[cihazId] = { sensors:{}, lastUpdate:null, seenParams:new Set(), fbHistory:{}, meta:{}, ts:0 };
         listenCihaz(cihazId);     // bu cihazın canlı verisini dinle
-        loadDeviceCfg(cihazId);   // cihaz ayarlarını yükle
       }
+      devices[cihazId].meta = dd;                 // fw, ip, rssi, otaIste ...
+      if (dd.cfg) deviceCfg[cihazId] = dd.cfg;    // ayarlar da buradan gelir (tek okuma, canlı)
     });
+    renderAll();
   }, err => {
     setConnStatus('', 'Bağlantı hatası');
     console.error(err);
@@ -344,7 +352,8 @@ function listenCihaz(cihazId) {
       });
 
       devices[cihazId].status     = data.durum || 'offline';
-      devices[cihazId].lastUpdate = new Date();
+      devices[cihazId].ts         = Number(data.ts) || 0;
+      devices[cihazId].lastUpdate = data.ts ? new Date(Number(data.ts)) : new Date();
 
       setConnStatus('connected', 'Bağlı');
       renderAll();
@@ -492,6 +501,7 @@ function setConnStatus(cls, text) {
 
 // ==================== RENDER ====================
 function renderAll() {
+  lastOnlineSig = onlineSig();
   document.getElementById('back-btn').style.display =
     (viewMode==='list' && activeDevice) ? 'inline-block' : 'none';
 
@@ -524,7 +534,7 @@ function renderAll() {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span class="device-status ${d.status==='online'?'online':'offline'}">● ${d.status==='online'?'Online':'Offline'}</span>
+          <span class="device-status ${isOnline(d)?'online':'offline'}">● ${isOnline(d)?'Online':'Offline'}</span>
           <span class="device-list-arrow">→</span>
         </div>
       </div>`;
@@ -533,9 +543,35 @@ function renderAll() {
 }
 
 // ==================== YARDIMCI ====================
+function esc(x) {
+  return String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// Firestore'da "bağlantı koptu" olayı yok; cihaz öldüyse durum="online" kalır.
+// Bu yüzden son ts'ye bakıyoruz.
+function isOnline(d) {
+  if (!d || d.status !== 'online') return false;
+  if (!d.ts) return true;                       // eski firmware ts göndermiyorsa duruma güven
+  return (Date.now() - d.ts) < ONLINE_TIMEOUT_MS;
+}
+function onlineSig() { return Object.keys(devices).map(c => c + isOnline(devices[c])).join('|'); }
+let lastOnlineSig = '';
+setInterval(() => { if (onlineSig() !== lastOnlineSig) renderAll(); }, 10000);
+
+function fwHTML(cihaz) {
+  const m = (devices[cihaz] || {}).meta || {};
+  const fw = m.fw != null ? 'fw v' + esc(m.fw) : 'fw ?';
+  const btn = `<button class="ota-btn" onclick="requestOta('${cihaz}')" ${m.otaIste?'disabled':''}>${m.otaIste?'⏳ bekliyor':'⟳ Güncelle'}</button>`;
+  return `${fw}${m.ip?' · '+esc(m.ip):''}${m.rssi!=null?' · '+esc(m.rssi)+'dBm':''} ${btn}`;
+}
+async function requestOta(cihazId) {
+  event.stopPropagation();
+  if (!confirm('Cihaz en geç ~1 dk içinde GitHub\'daki yeni sürümü indirip yeniden başlayacak. Devam?')) return;
+  try { await db.collection('cihazlar').doc(cihazId).set({ otaIste:true }, { merge:true }); }
+  catch(e) { alert('Gönderilemedi: ' + e.message); }
+}
 function getDisp(cihaz) {
   const cfg = deviceCfg[cihaz]||{};
-  return { name:cfg.name||cihaz, icon:cfg.icon||'📦', photo:cfg.photo||null };
+  return { name:esc(cfg.name||cihaz), icon:cfg.icon||'📦', photo:cfg.photo?esc(cfg.photo):null };
 }
 function iconHTML(disp) {
   return disp.photo
@@ -565,7 +601,7 @@ function paramBadgeHTML(cihaz) {
 // ==================== KART ====================
 function cardHTML(cihaz, showChart) {
   const d=devices[cihaz], disp=getDisp(cihaz);
-  const online=d.status==='online';
+  const online=isOnline(d);
   const lastUpd=d.lastUpdate?'Son güncelleme: '+d.lastUpdate.toLocaleTimeString('tr-TR'):'Bekleniyor...';
 
   const sensorsHTML=Object.entries(d.sensors).map(([s,v])=>{
@@ -591,7 +627,7 @@ function cardHTML(cihaz, showChart) {
     ${showChart ? chartsHTML(cihaz) : ''}
     <div class="device-footer">
       <span>${lastUpd}</span>
-      <span>cihazlar/${cihaz}/canli</span>
+      <span>${fwHTML(cihaz)}</span>
     </div>
   </div>`;
 }
