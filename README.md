@@ -17,7 +17,7 @@ Cihazlar → Firestore (REST, Firebase Auth ile) → `index.html` (GitHub Pages)
 2. **Authentication → Users → Add user** ile hesapları aç:
    - Sen: kendi e-postan + güçlü bir şifre (dashboard girişi)
    - Her cihaz için: `esp8266-1@cihaz.example.com`, `esp01-1@cihaz.example.com` (+ ayrı, uzun şifreler)
-3. **Firestore → Rules**: `firestore.rules` içeriğini yapıştır, `BURAYA_KENDI_EPOSTAN@gmail.com`'u kendi e-postanla değiştir, **Publish**.
+3. **Firestore → Rules**: `firestore.rules` içeriğini yapıştır, **Publish**.
 4. (Önerilir) Authentication ayarlarında kendi kendine kayıt (sign-up) kapatma seçeneği varsa kapat. Kurallar zaten
    sadece yukarıdaki e-postalara izin verir; bu ek bir katman.
 5. Eski açık kurallar ve eski `iot2025` şifresi geçersiz sayılmalı: kuralları yayınladığında artık kimse yazamaz/okuyamaz.

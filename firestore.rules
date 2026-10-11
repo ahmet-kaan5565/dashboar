@@ -5,7 +5,7 @@ service cloud.firestore {
     // !! Aşağıdaki e-postayı KENDİ dashboard hesabınla değiştir (Firebase Console > Authentication > Users'taki hesap).
     function isOwner() {
       return request.auth != null
-          && request.auth.token.email == 'BURAYA_KENDI_EPOSTAN@gmail.com';
+          && request.auth.token.email == 'ahmetkaanisik5565@gmail.com';
     }
 
     // Cihaz hesabı: <id>@cihaz.example.com  ->  sadece cihazlar/<id> ve altına erişir
