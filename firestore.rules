@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // !! Aşağıdaki e-postayı KENDİ dashboard hesabınla değiştir (Firebase Console > Authentication > Users'taki hesap).
+    function isOwner() {
+      return request.auth != null
+          && request.auth.token.email == 'BURAYA_KENDI_EPOSTAN@gmail.com';
+    }
+
+    // Cihaz hesabı: <id>@cihaz.example.com  ->  sadece cihazlar/<id> ve altına erişir
+    function isDevice(id) {
+      return request.auth != null
+          && request.auth.token.email == id + '@cihaz.example.com';
+    }
+
+    match /cihazlar/{id} {
+      allow read, write: if isOwner() || isDevice(id);
+
+      match /{path=**} {
+        allow read, write: if isOwner() || isDevice(id);
+      }
+    }
+
+    // Geri kalan her şey kapalı (varsayılan reddet)
+  }
+}

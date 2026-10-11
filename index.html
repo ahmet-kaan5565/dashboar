@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IoT Dashboard</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
   :root {
@@ -152,11 +153,15 @@
     <h1>IoT Dashboard</h1>
     <p>Firebase ile doğrudan bağlanın</p>
     <div class="field">
-      <label>Erişim Şifresi</label>
-      <input type="password" id="inp-pass" placeholder="Şifrenizi girin" autocomplete="off">
+      <label>E-posta</label>
+      <input type="email" id="inp-email" placeholder="ornek@gmail.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Şifre</label>
+      <input type="password" id="inp-pass" placeholder="Şifrenizi girin" autocomplete="current-password">
     </div>
     <button class="login-btn" onclick="doLogin()">Giriş</button>
-    <div id="login-error">Hatalı şifre.</div>
+    <div id="login-error">Giriş başarısız.</div>
   </div>
 </div>
 
@@ -239,11 +244,9 @@ const FB_CFG = {
   appId:             "1:995887991284:web:55b1706cfcd059816ad1a1"
 };
 firebase.initializeApp(FB_CFG);
-const db = firebase.firestore();
-
-// Basit şifre koruması (Firestore kuralları zaten korur, bu sadece UI için)
-// Şifreyi kendine göre değiştir:
-const DASHBOARD_PASS = "iot2025";
+const db   = firebase.firestore();
+const auth = firebase.auth();
+// Giriş artık Firebase Auth ile. Gerçek koruma Firestore kurallarında (firestore.rules); bu sayfadaki hiçbir şey gizli değil.
 
 // ==================== SABITLER ====================
 const SENSOR_META = {
@@ -267,27 +270,37 @@ let modalTarget  = null;
 let modalSelIcon = null;
 
 // ==================== GİRİŞ ====================
-function doLogin() {
-  const pass = document.getElementById('inp-pass').value;
-  if (pass !== DASHBOARD_PASS) {
-    document.getElementById('login-error').style.display = 'block';
-    return;
+async function doLogin() {
+  const email = document.getElementById('inp-email').value.trim();
+  const pass  = document.getElementById('inp-pass').value;
+  const err   = document.getElementById('login-error');
+  err.style.display = 'none';
+  if (!email || !pass) { err.textContent = 'E-posta ve şifre gerekli.'; err.style.display = 'block'; return; }
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);   // sonrası onAuthStateChanged halleder
+  } catch (e) {
+    err.textContent = 'Giriş başarısız (e-posta/şifre hatalı olabilir).';
+    err.style.display = 'block';
+    console.error(e.code);
   }
-  localStorage.setItem('dash_auth', '1');
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('dashboard').style.display    = 'block';
-  startListening();
 }
 
-function doLogout() {
+function doLogout() { auth.signOut(); }
+
+function showLogin() {
   stopListening();
   devices = {}; deviceCfg = {}; activeDevice = null;
-  localStorage.removeItem('dash_auth');
   document.getElementById('devices-grid').innerHTML = '';
   document.getElementById('empty-state').style.display = 'block';
   document.getElementById('dashboard').style.display   = 'none';
   document.getElementById('login-screen').style.display= 'flex';
   document.getElementById('inp-pass').value = '';
+}
+
+function showDashboard() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display    = 'block';
+  startListening();
 }
 
 function stopListening() {
@@ -314,7 +327,7 @@ function startListening() {
     });
     renderAll();
   }, err => {
-    setConnStatus('', 'Bağlantı hatası');
+    setConnStatus('', err.code === 'permission-denied' ? 'Yetkin yok (Firestore kuralları)' : 'Bağlantı hatası');
     console.error(err);
   });
   listeners.push(unsub);
@@ -717,13 +730,7 @@ function sparklineHTML(data, color, unit) {
 }
 
 // ==================== OTO GİRİŞ ====================
-window.addEventListener('load', () => {
-  if (localStorage.getItem('dash_auth') === '1') {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display    = 'block';
-    startListening();
-  }
-});
+auth.onAuthStateChanged(user => { user ? showDashboard() : showLogin(); });
 
 document.addEventListener('keydown', e => {
   if (e.key==='Enter' && document.getElementById('login-screen').style.display!=='none') doLogin();
